@@ -28,10 +28,22 @@ target_link_libraries(tenuki_cli PRIVATE tenuki)
 add_executable(tenuki_tests
     tests/BoardTests.cpp
     tests/SearchTests.cpp
+    tests/SGFTests.cpp
     tests/TestMain.cpp
 )
 
 target_link_libraries(tenuki_tests PRIVATE tenuki)
 
 enable_testing()
-add_test(NAME board_tests COMMAND tenuki_tests)
+add_test(NAME all_tests COMMAND tenuki_tests)
+
+# Integration test: GTP over stdio using Python
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(
+    NAME gtp_integration
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/GTPIntegration_test.py $<TARGET_FILE:tenuki_cli>
+  )
+endif()
+include(CMakeDependentOption)
+include(CTest)
