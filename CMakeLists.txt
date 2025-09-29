@@ -50,6 +50,7 @@ add_executable(tenuki_tests
     tests/SGFTests.cpp
     tests/SGFFuzzTests.cpp
     tests/SearchStressTests.cpp
+    tests/ModelQualityTests.cpp
     tests/TestMain.cpp
 )
 
