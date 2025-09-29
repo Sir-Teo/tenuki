@@ -23,6 +23,42 @@ std::string to_lower_copy(std::string text) {
     return text;
 }
 
+bool try_parse_int(const std::string& s, int& out) {
+    std::string t = trim_copy(s);
+    if (t.empty()) return false;
+    try {
+        std::size_t idx = 0;
+        long v = std::stol(t, &idx);
+        // ensure only trailing whitespace remains
+        if (idx < t.size()) {
+            auto rest = trim_copy(t.substr(idx));
+            if (!rest.empty()) return false;
+        }
+        if (v < std::numeric_limits<int>::min() || v > std::numeric_limits<int>::max()) return false;
+        out = static_cast<int>(v);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool try_parse_double(const std::string& s, double& out) {
+    std::string t = trim_copy(s);
+    if (t.empty()) return false;
+    try {
+        std::size_t idx = 0;
+        double v = std::stod(t, &idx);
+        if (idx < t.size()) {
+            auto rest = trim_copy(t.substr(idx));
+            if (!rest.empty()) return false;
+        }
+        out = v;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 } // namespace
 
 namespace gtp {
@@ -107,7 +143,10 @@ Server::HandlerResult Server::handle_boardsize(const std::string& args) {
     if (args.empty()) {
         return {false, "boardsize requires argument"};
     }
-    int size = std::stoi(args);
+    int size = 0;
+    if (!try_parse_int(args, size)) {
+        return {false, "invalid boardsize"};
+    }
     if (size <= 0 || size > 25) {
         return {false, "invalid boardsize"};
     }
@@ -129,7 +168,10 @@ Server::HandlerResult Server::handle_komi(const std::string& args) {
     if (args.empty()) {
         return {false, "komi requires value"};
     }
-    double komi = std::stod(args);
+    double komi = 0.0;
+    if (!try_parse_double(args, komi)) {
+        return {false, "invalid komi"};
+    }
     go::Rules rules = board_.rules();
     rules.komi = komi;
     board_ = go::Board(rules);
@@ -269,7 +311,7 @@ std::pair<bool, go::Move> Server::parse_vertex(const std::string& vertex) const 
     std::transform(upper.begin(), upper.end(), upper.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 
     char column_char = upper.front();
-    if (column_char < 'A' || column_char > 'Z') {
+    if (column_char < 'A' || column_char > 'Z' || column_char == 'I') {
         return {false, go::Move::Pass()};
     }
 
@@ -282,7 +324,10 @@ std::pair<bool, go::Move> Server::parse_vertex(const std::string& vertex) const 
     if (row_str.empty()) {
         return {false, go::Move::Pass()};
     }
-    int row = std::stoi(row_str);
+    int row = 0;
+    if (!try_parse_int(row_str, row)) {
+        return {false, go::Move::Pass()};
+    }
     if (row <= 0 || row > static_cast<int>(board_.board_size())) {
         return {false, go::Move::Pass()};
     }

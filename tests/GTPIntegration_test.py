@@ -95,6 +95,12 @@ def main():
         # Unknown command should fail
         expect_fail(send(proc, 'unknown_command_xyz'))
 
+        # Invalid inputs should fail gracefully
+        expect_fail(send(proc, 'boardsize cats'))
+        expect_fail(send(proc, 'komi nope'))
+        expect_fail(send(proc, 'play X D4'))
+        expect_fail(send(proc, 'play B I9'))  # I column is invalid
+
         expect_ok(send(proc, 'quit'))
     finally:
         try:
