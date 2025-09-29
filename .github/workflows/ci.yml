@@ -23,3 +23,30 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure -V
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure (coverage)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
+      - name: Build (coverage)
+        run: cmake --build build -j
+      - name: Run tests (coverage)
+        run: ctest --test-dir build --output-on-failure
+      - name: Install gcovr
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install gcovr
+      - name: Generate coverage reports
+        run: |
+          gcovr -r . -x -o build/coverage.xml
+          gcovr -r . --html-details -o build/coverage.html
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            build/coverage.xml
+            build/coverage.html

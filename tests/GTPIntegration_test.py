@@ -30,6 +30,10 @@ def expect_ok(reply):
     assert reply.startswith('='), f"Expected OK reply, got: {reply!r}"
 
 
+def expect_fail(reply):
+    assert reply.startswith('?'), f"Expected failure reply, got: {reply!r}"
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: GTPIntegration_test.py <engine_binary>")
@@ -75,11 +79,21 @@ def main():
         expect_ok(reply)
         assert 'A B C D E F G H J' in reply
 
+        # Play explicit moves and pass
+        expect_ok(send(proc, 'play B D4'))
+        expect_ok(send(proc, 'play W pass'))
+
+        # Verify J9 is valid (skip I column)
+        expect_ok(send(proc, 'play B J9'))
+
         # final_score returns a score string
         reply = send(proc, 'final_score')
         expect_ok(reply)
         score = reply.split('\n')[0].split(' ', 1)[-1].strip()
         assert score == '0' or re.match(r'^[BW]\+[0-9]+(\.[0-9])?$', score), f"Bad score: {score}"
+
+        # Unknown command should fail
+        expect_fail(send(proc, 'unknown_command_xyz'))
 
         expect_ok(send(proc, 'quit'))
     finally:
@@ -95,4 +109,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

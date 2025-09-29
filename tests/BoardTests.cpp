@@ -24,6 +24,31 @@ void test_simple_capture() {
     assert(board.point_state(4) == PointState::Empty);
 }
 
+void test_neutral_point_no_territory() {
+    // On a 3x3, set up a neutral point in the center adjacent to both colors.
+    // Board indices (x,y) zero-based, vertex = y*3 + x
+    // Place black at (0,1) and (2,1); white at (1,0) and (1,2). Center (1,1) empty.
+    Rules rules;
+    rules.board_size = 3;
+    rules.komi = 0.0;
+    Board board(rules);
+
+    // B (0,1) = 3*1 + 0 = 3
+    board.play_move(Player::Black, Move(3));
+    // W (1,0) = 1
+    board.play_move(Player::White, Move(1));
+    // B (2,1) = 5
+    board.play_move(Player::Black, Move(5));
+    // W (1,2) = 7
+    board.play_move(Player::White, Move(7));
+
+    auto score = board.tromp_taylor_score();
+    // No territory should be counted for the center point.
+    // Stones only: 2 black stones, 2 white stones.
+    assert(score.black_points == 2);
+    assert(score.white_points == 2);
+}
+
 void test_simple_ko() {
     Rules rules;
     rules.board_size = 5;
@@ -61,6 +86,7 @@ void test_tromp_taylor_score() {
 
 void run_board_tests() {
     test_simple_capture();
+    test_neutral_point_no_territory();
     test_simple_ko();
     test_tromp_taylor_score();
 }
