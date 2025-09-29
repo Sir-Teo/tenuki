@@ -1,10 +1,12 @@
 #include "search/Search.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <numeric>
 #include <random>
+#include <thread>
 #include <unordered_map>
 
 namespace search {
@@ -45,20 +47,29 @@ void SearchAgent::ensure_root(const go::Board& board, go::Player to_play) {
         root_->value_sum = 0.0f;
         root_->children.clear();
         root_->move_to_index.clear();
+        root_->virtual_loss_count = 0;
+        root_->expanding = false;
         root_hash_ = key;
         root_player_ = to_play;
         root_ready_ = true;
     } else {
+        std::scoped_lock lock(root_->mutex);
         root_->to_play = to_play;
     }
 
-    if (!root_->expanded) {
-        expand(*root_, board);
-    }
+    if (root_) {
+        if (!root_->expanded) {
+            float unused_value = 0.0f;
+            (void)try_expand(*root_, board, unused_value);
+        }
 
-    if (config_.dirichlet_epsilon > 0.0f && !root_->noise_applied) {
-        apply_dirichlet_noise(*root_, rng_);
-        root_->noise_applied = true;
+        if (config_.dirichlet_epsilon > 0.0f) {
+            std::unique_lock<std::mutex> lock(root_->mutex);
+            if (!root_->noise_applied && !root_->children.empty()) {
+                apply_dirichlet_noise(*root_, rng_);
+                root_->noise_applied = true;
+            }
+        }
     }
 }
 
@@ -71,8 +82,32 @@ go::Move SearchAgent::select_move(const go::Board& board, go::Player to_play, in
         playouts = dist(rng_);
     }
 
-    for (int i = 0; i < playouts; ++i) {
-        run_simulation(board, rng_);
+    const int thread_count = std::max(1, config_.num_threads);
+    if (thread_count <= 1) {
+        for (int i = 0; i < playouts; ++i) {
+            run_simulation(board, rng_);
+        }
+    } else {
+        std::atomic<int> counter{0};
+        std::vector<std::thread> workers;
+        workers.reserve(static_cast<std::size_t>(thread_count));
+        for (int t = 0; t < thread_count; ++t) {
+            const unsigned int seed_offset = static_cast<unsigned int>(t + 1) * 0x9e3779b9u;
+            const unsigned int seed = config_.seed ^ seed_offset ^ static_cast<unsigned int>(move_number * 17 + playouts);
+            workers.emplace_back([this, &board, playouts, &counter, seed]() {
+                std::mt19937 local_rng(seed);
+                while (true) {
+                    const int idx = counter.fetch_add(1, std::memory_order_relaxed);
+                    if (idx >= playouts) {
+                        break;
+                    }
+                    run_simulation(board, local_rng);
+                }
+            });
+        }
+        for (auto& worker : workers) {
+            worker.join();
+        }
     }
 
     return select_move_from_root(move_number, rng_);
@@ -103,6 +138,10 @@ void SearchAgent::notify_move(go::Move move, const go::Board& board_after_move, 
         root_ = std::move(next_root);
         root_->to_play = to_play;
         root_->noise_applied = false;
+        root_->virtual_loss_count = 0;
+        for (auto& child : root_->children) {
+            child.virtual_loss_count = 0;
+        }
         root_hash_ = new_hash;
         root_player_ = to_play;
         root_ready_ = true;
@@ -122,6 +161,7 @@ void SearchAgent::reset() {
 }
 
 void SearchAgent::apply_dirichlet_noise(Node& node, std::mt19937& rng) {
+    std::unique_lock<std::mutex> lock(node.mutex);
     if (node.children.empty()) {
         return;
     }
@@ -162,70 +202,93 @@ float SearchAgent::simulate(go::Board board_copy, Node& node, std::mt19937& rng)
     path.push_back(current);
 
     while (true) {
-        if (!current->expanded) {
-            float value = expand(*current, board_copy);
-            backpropagate(std::move(path), std::move(child_indices), value);
-            return value;
+        float expansion_value = 0.0f;
+        if (try_expand(*current, board_copy, expansion_value)) {
+            backpropagate(path, child_indices, expansion_value);
+            return expansion_value;
         }
 
-        if (current->children.empty()) {
-            // No legal moves; treat as terminal.
-            float terminal_value = 0.0f;
-            backpropagate(std::move(path), std::move(child_indices), terminal_value);
-            return terminal_value;
+        {
+            std::unique_lock<std::mutex> lock(current->mutex);
+            if (current->children.empty()) {
+                lock.unlock();
+                backpropagate(path, child_indices, 0.0f);
+                return 0.0f;
+            }
         }
 
         const int child_index = select_child(*current, rng);
         const std::size_t child_pos = static_cast<std::size_t>(child_index);
-        child_indices.push_back(child_index);
-        SearchAgent::Child& child = current->children[child_pos];
-        go::Move move = child.move == -1 ? go::Move::Pass() : go::Move(child.move);
+
+        SearchAgent::Child* child_ptr = nullptr;
+        {
+            std::unique_lock<std::mutex> lock(current->mutex);
+            child_ptr = &current->children[child_pos];
+            if (!child_ptr->node) {
+                child_ptr->node = std::make_unique<Node>();
+                child_ptr->node->to_play = go::other(current->to_play);
+            }
+        }
+
+        go::Move move = child_ptr->move == -1 ? go::Move::Pass() : go::Move(child_ptr->move);
         const bool legal = board_copy.play_move(current->to_play, move);
         if (!legal) {
-            // Should not happen; prune child and restart selection.
-            child.prior = 0.0f;
-            child.visit_count = 0;
-            child.value_sum = 0.0f;
-            child.node.reset();
-            child_indices.pop_back();
+            std::unique_lock<std::mutex> lock(current->mutex);
+            revert_virtual_loss(*current, child_pos);
+            child_ptr->prior = 0.0f;
+            child_ptr->visit_count = 0;
+            child_ptr->value_sum = 0.0f;
+            child_ptr->node.reset();
             continue;
         }
-        if (!child.node) {
-            child.node = std::make_unique<Node>();
-            child.node->to_play = go::other(current->to_play);
-        }
-        current = child.node.get();
+
+        current = child_ptr->node.get();
+        child_indices.push_back(child_index);
         path.push_back(current);
     }
 }
 
-int SearchAgent::select_child(const Node& node, std::mt19937& rng) const {
+int SearchAgent::select_child(Node& node, std::mt19937& rng) {
+    std::unique_lock<std::mutex> lock(node.mutex);
     const float sqrt_total = std::sqrt(static_cast<float>(node.visit_count) + 1.0f);
     const float parent_q = node.visit_count > 0 ? node.value_sum / static_cast<float>(node.visit_count) : 0.0f;
     float best_score = -std::numeric_limits<float>::infinity();
-    int best_index = 0;
+    std::size_t best_index = 0;
 
     for (std::size_t idx = 0; idx < node.children.size(); ++idx) {
-        const SearchAgent::Child& child = node.children[idx];
-        float q = 0.0f;
-        if (child.visit_count > 0) {
-            q = child.value_sum / static_cast<float>(child.visit_count);
-        } else {
-            q = parent_q - config_.fpu_reduction;
-        }
+        SearchAgent::Child& child = node.children[idx];
+        float q = child.visit_count > 0 ? child.value_sum / static_cast<float>(child.visit_count)
+                                        : parent_q - config_.fpu_reduction;
         q = std::clamp(q, -1.0f, 1.0f);
-        const float u = config_.cpuct * child.prior * sqrt_total / (1.0f + static_cast<float>(child.visit_count));
+        const float u = config_.cpuct * child.prior * sqrt_total /
+                        (1.0f + static_cast<float>(child.visit_count));
         const float score = q + u;
         const float noisy_score = score + 1e-6f * std::generate_canonical<float, 10>(rng);
         if (noisy_score > best_score) {
             best_score = noisy_score;
-            best_index = static_cast<int>(idx);
+            best_index = idx;
         }
     }
-    return best_index;
+
+    apply_virtual_loss(node, best_index);
+    return static_cast<int>(best_index);
 }
 
-float SearchAgent::expand(Node& node, const go::Board& board) {
+bool SearchAgent::try_expand(Node& node, const go::Board& board, float& value) {
+    {
+        std::unique_lock<std::mutex> lock(node.mutex);
+        if (node.expanded) {
+            return false;
+        }
+        while (node.expanding) {
+            node.cv.wait(lock);
+            if (node.expanded) {
+                return false;
+            }
+        }
+        node.expanding = true;
+    }
+
     EvaluationResult eval = evaluator_->evaluate(board, node.to_play);
     const std::size_t board_area = board.board_size() * board.board_size();
     const std::size_t expected_policy_size = board_area + 1;
@@ -236,7 +299,6 @@ float SearchAgent::expand(Node& node, const go::Board& board) {
 
     std::vector<int> legal_moves;
     legal_moves.reserve(board_area + 1);
-
     std::vector<float> priors;
     priors.reserve(board_area + 1);
 
@@ -269,41 +331,101 @@ float SearchAgent::expand(Node& node, const go::Board& board) {
         }
     }
 
-    node.children.clear();
-    node.move_to_index.clear();
-    node.children.reserve(legal_moves.size());
+    std::vector<Child> children;
+    std::unordered_map<int, std::size_t> move_to_index;
+    children.reserve(legal_moves.size());
 
     for (std::size_t i = 0; i < legal_moves.size(); ++i) {
-        SearchAgent::Child child;
+        Child child;
         child.move = legal_moves[i];
         child.prior = priors[i];
         child.value_sum = 0.0f;
         child.visit_count = 0;
+        child.virtual_loss_count = 0;
         child.node.reset();
-        node.move_to_index[child.move] = i;
-        node.children.push_back(std::move(child));
+        move_to_index[child.move] = i;
+        children.push_back(std::move(child));
     }
 
-    node.expanded = true;
-    node.noise_applied = false;
-    return eval.value;
+    {
+        std::unique_lock<std::mutex> lock(node.mutex);
+        node.children = std::move(children);
+        node.move_to_index = std::move(move_to_index);
+        node.expanded = true;
+        node.noise_applied = false;
+        node.expanding = false;
+        node.cv.notify_all();
+    }
+
+    value = eval.value;
+    return true;
 }
 
-void SearchAgent::backpropagate(std::vector<Node*> path, std::vector<int> child_indices, float value) {
+void SearchAgent::apply_virtual_loss(Node& node, std::size_t child_index) {
+    if (!config_.use_virtual_loss) {
+        return;
+    }
+    Child& child = node.children[child_index];
+    child.virtual_loss_count += 1;
+    child.visit_count += config_.virtual_loss_visits;
+    child.value_sum -= config_.virtual_loss;
+    node.virtual_loss_count += 1;
+    node.visit_count += config_.virtual_loss_visits;
+    node.value_sum -= config_.virtual_loss;
+}
+
+void SearchAgent::revert_virtual_loss(Node& node, std::size_t child_index) {
+    if (!config_.use_virtual_loss) {
+        return;
+    }
+    Child& child = node.children[child_index];
+    if (child.virtual_loss_count > 0) {
+        child.virtual_loss_count -= 1;
+        child.visit_count = std::max(0, child.visit_count - config_.virtual_loss_visits);
+        child.value_sum += config_.virtual_loss;
+    }
+    if (node.virtual_loss_count > 0) {
+        node.virtual_loss_count -= 1;
+        node.visit_count = std::max(0, node.visit_count - config_.virtual_loss_visits);
+        node.value_sum += config_.virtual_loss;
+    }
+}
+
+void SearchAgent::backpropagate(const std::vector<Node*>& path, const std::vector<int>& child_indices, float value) {
     float current_value = value;
     for (std::size_t idx = path.size(); idx-- > 0;) {
         Node* node = path[idx];
-        node->visit_count += 1;
-        node->value_sum += current_value;
+        backpropagate_on_node(*node, current_value);
         if (idx > 0) {
             Node* parent = path[idx - 1];
             const std::size_t child_index = static_cast<std::size_t>(child_indices[idx - 1]);
-            SearchAgent::Child& child = parent->children[child_index];
-            child.visit_count += 1;
-            child.value_sum += current_value;
+            backpropagate_on_edge(*parent, child_index, current_value);
         }
         current_value = -current_value;
     }
+}
+
+void SearchAgent::backpropagate_on_node(Node& node, float value) {
+    std::unique_lock<std::mutex> lock(node.mutex);
+    if (config_.use_virtual_loss && node.virtual_loss_count > 0) {
+        node.virtual_loss_count -= 1;
+        node.visit_count = std::max(0, node.visit_count - config_.virtual_loss_visits);
+        node.value_sum += config_.virtual_loss;
+    }
+    node.visit_count += 1;
+    node.value_sum += value;
+}
+
+void SearchAgent::backpropagate_on_edge(Node& parent, std::size_t child_index, float value) {
+    std::unique_lock<std::mutex> lock(parent.mutex);
+    Child& child = parent.children[child_index];
+    if (config_.use_virtual_loss && child.virtual_loss_count > 0) {
+        child.virtual_loss_count -= 1;
+        child.visit_count = std::max(0, child.visit_count - config_.virtual_loss_visits);
+        child.value_sum += config_.virtual_loss;
+    }
+    child.visit_count += 1;
+    child.value_sum += value;
 }
 
 go::Move SearchAgent::select_move_from_root(int move_number, std::mt19937& rng) const {

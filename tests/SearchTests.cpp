@@ -3,6 +3,7 @@
 #include "search/Search.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <random>
 
@@ -32,7 +33,7 @@ private:
 class CountingEvaluator : public search::Evaluator {
 public:
     search::EvaluationResult evaluate(const go::Board& board, go::Player) override {
-        ++calls;
+        calls.fetch_add(1, std::memory_order_relaxed);
         const std::size_t area = board.board_size() * board.board_size();
         search::EvaluationResult result;
         result.policy.assign(area + 1, 1.0f);
@@ -40,7 +41,7 @@ public:
         return result;
     }
 
-    int calls = 0;
+    std::atomic<int> calls{0};
 };
 
 go::Move choose_alternate_move(const go::Board& board, const go::Move& primary) {
@@ -106,6 +107,7 @@ void test_search_prefers_high_prior_move() {
     config.dirichlet_epsilon = 0.0f;
     config.temperature = 0.0f;
     config.temperature_move_cutoff = 0;
+    config.num_threads = 4;
 
     auto evaluator = std::make_shared<BiasedEvaluator>(0, 0.3f);
     search::SearchAgent agent(config, evaluator);
@@ -150,6 +152,7 @@ void test_search_uses_randomized_playout_cap_when_enabled() {
     config.dirichlet_epsilon = 0.0f;
     config.temperature = 0.0f;
     config.temperature_move_cutoff = 0;
+    config.num_threads = 3;
 
     std::mt19937 rng(config.seed);
     std::uniform_int_distribution<int> dist(config.random_playouts_min, config.random_playouts_max);
@@ -158,7 +161,29 @@ void test_search_uses_randomized_playout_cap_when_enabled() {
     search::SearchAgent agent(config, evaluator);
     agent.select_move(board, go::Player::Black, 0);
 
-    TENUKI_EXPECT_EQ(evaluator->calls, expected_playouts + 1);
+    TENUKI_EXPECT_EQ(evaluator->calls.load(std::memory_order_relaxed), expected_playouts + 1);
+}
+
+void test_multithreaded_search_runs_expected_playouts() {
+    go::Rules rules;
+    rules.board_size = 5;
+    go::Board board(rules);
+
+    auto evaluator = std::make_shared<CountingEvaluator>();
+
+    search::SearchConfig config;
+    config.max_playouts = 64;
+    config.enable_playout_cap_randomization = false;
+    config.dirichlet_epsilon = 0.0f;
+    config.temperature = 0.0f;
+    config.temperature_move_cutoff = 0;
+    config.num_threads = 4;
+
+    search::SearchAgent agent(config, evaluator);
+    agent.select_move(board, go::Player::Black, 0);
+
+    const int expected_calls = config.max_playouts + 1;
+    TENUKI_EXPECT_EQ(evaluator->calls.load(std::memory_order_relaxed), expected_calls);
 }
 
 void test_notify_move_resets_tree_when_child_unexpanded() {
@@ -178,18 +203,18 @@ void test_notify_move_resets_tree_when_child_unexpanded() {
     search::SearchAgent agent(config, evaluator);
 
     const go::Move chosen = agent.select_move(board, go::Player::Black, 0);
-    const int calls_after_first = evaluator->calls;
+    const int calls_after_first = evaluator->calls.load(std::memory_order_relaxed);
 
     const go::Move alternate = choose_alternate_move(board, chosen);
     TENUKI_EXPECT(board.play_move(go::Player::Black, alternate));
     agent.notify_move(alternate, board, board.to_play());
 
-    const int calls_before_second = evaluator->calls;
+    const int calls_before_second = evaluator->calls.load(std::memory_order_relaxed);
     agent.select_move(board, board.to_play(), 1);
 
     const int playouts = std::max(1, config.max_playouts);
-    TENUKI_EXPECT_EQ(evaluator->calls, calls_before_second + playouts + 1);
-    TENUKI_EXPECT(evaluator->calls > calls_after_first);
+    TENUKI_EXPECT_EQ(evaluator->calls.load(std::memory_order_relaxed), calls_before_second + playouts + 1);
+    TENUKI_EXPECT(evaluator->calls.load(std::memory_order_relaxed) > calls_after_first);
 }
 
 void run_search_tests() {
@@ -199,4 +224,5 @@ void run_search_tests() {
     test_search_returns_pass_when_no_legal_moves();
     test_search_uses_randomized_playout_cap_when_enabled();
     test_notify_move_resets_tree_when_child_unexpanded();
+    test_multithreaded_search_runs_expected_playouts();
 }

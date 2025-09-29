@@ -2,7 +2,9 @@
 
 #include "go/Board.hpp"
 
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <random>
 #include <unordered_map>
 #include <vector>
@@ -21,6 +23,10 @@ struct SearchConfig {
     int random_playouts_min = 192;
     int random_playouts_max = 384;
     unsigned int seed = 0x5eed1234u;
+    int num_threads = 1;
+    bool use_virtual_loss = true;
+    float virtual_loss = 1.0f;
+    int virtual_loss_visits = 1;
 };
 
 struct EvaluationResult {
@@ -59,6 +65,7 @@ private:
             float value_sum = 0.0f;
             int visit_count = 0;
             std::unique_ptr<Node> node;
+            int virtual_loss_count = 0;
         };
 
         go::Player to_play = go::Player::Black;
@@ -68,17 +75,25 @@ private:
         float value_sum = 0.0f;
         std::vector<Child> children;
         std::unordered_map<int, std::size_t> move_to_index;
+        int virtual_loss_count = 0;
+        bool expanding = false;
+        mutable std::mutex mutex;
+        mutable std::condition_variable cv;
     };
 
     using Child = Node::Child;
 
     void ensure_root(const go::Board& board, go::Player to_play);
     go::Move select_move_from_root(int move_number, std::mt19937& rng) const;
-    float expand(Node& node, const go::Board& board);
+    bool try_expand(Node& node, const go::Board& board, float& value);
     float run_simulation(const go::Board& root_board, std::mt19937& rng);
     float simulate(go::Board board_copy, Node& node, std::mt19937& rng);
-    int select_child(const Node& node, std::mt19937& rng) const;
-    void backpropagate(std::vector<Node*> path, std::vector<int> child_indices, float value);
+    int select_child(Node& node, std::mt19937& rng);
+    void apply_virtual_loss(Node& node, std::size_t child_index);
+    void revert_virtual_loss(Node& node, std::size_t child_index);
+    void backpropagate(const std::vector<Node*>& path, const std::vector<int>& child_indices, float value);
+    void backpropagate_on_node(Node& node, float value);
+    void backpropagate_on_edge(Node& parent, std::size_t child_index, float value);
     void apply_dirichlet_noise(Node& node, std::mt19937& rng);
     std::uint64_t state_key(const go::Board& board, go::Player to_play) const;
 

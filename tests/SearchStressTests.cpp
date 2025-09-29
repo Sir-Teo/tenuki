@@ -11,6 +11,7 @@ void test_search_short_random_game_stability() {
     cfg.enable_playout_cap_randomization = false;
     cfg.max_playouts = 16;
     cfg.dirichlet_epsilon = 0.0f;
+    cfg.num_threads = 4;
     auto eval = search::make_uniform_evaluator();
     search::SearchAgent agent(cfg, eval);
 
@@ -26,4 +27,3 @@ void test_search_short_random_game_stability() {
 void run_search_stress_tests() {
     test_search_short_random_game_stability();
 }
-
