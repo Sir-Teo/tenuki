@@ -76,6 +76,9 @@ if(Python3_Interpreter_FOUND)
     NAME gtp_integration
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/GTPIntegration_test.py $<TARGET_FILE:tenuki_cli>
   )
+  set_tests_properties(gtp_integration PROPERTIES
+    ENVIRONMENT "TENUKI_MAX_PLAYOUTS=8;TENUKI_RANDOM_PLAYOUTS_MIN=4;TENUKI_RANDOM_PLAYOUTS_MAX=8"
+  )
   add_test(
     NAME gtp_fuzz
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/GTPFuzz_test.py $<TARGET_FILE:tenuki_cli>

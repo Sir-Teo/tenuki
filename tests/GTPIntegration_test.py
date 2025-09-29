@@ -51,6 +51,9 @@ def main():
     assert os.path.exists(binary), f"Binary not found: {binary}"
 
     env = os.environ.copy()
+    env.setdefault("TENUKI_MAX_PLAYOUTS", "8")
+    env.setdefault("TENUKI_RANDOM_PLAYOUTS_MIN", "4")
+    env.setdefault("TENUKI_RANDOM_PLAYOUTS_MAX", "8")
     proc = subprocess.Popen(
         [binary],
         stdin=subprocess.PIPE,
@@ -120,4 +123,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

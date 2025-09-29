@@ -64,10 +64,16 @@ void SearchAgent::ensure_root(const go::Board& board, go::Player to_play) {
         }
 
         if (config_.dirichlet_epsilon > 0.0f) {
-            std::unique_lock<std::mutex> lock(root_->mutex);
-            if (!root_->noise_applied && !root_->children.empty()) {
+            bool needs_noise = false;
+            {
+                std::unique_lock<std::mutex> lock(root_->mutex);
+                if (!root_->noise_applied && !root_->children.empty()) {
+                    root_->noise_applied = true;
+                    needs_noise = true;
+                }
+            }
+            if (needs_noise) {
                 apply_dirichlet_noise(*root_, rng_);
-                root_->noise_applied = true;
             }
         }
     }

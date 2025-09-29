@@ -40,6 +40,9 @@ def main():
 
     rng = random.Random(1234)
     env = os.environ.copy()
+    env.setdefault("TENUKI_MAX_PLAYOUTS", "1")
+    env.setdefault("TENUKI_RANDOM_PLAYOUTS_MIN", "1")
+    env.setdefault("TENUKI_RANDOM_PLAYOUTS_MAX", "1")
     proc = subprocess.Popen(
         [binary],
         stdin=subprocess.PIPE,
@@ -85,4 +88,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
