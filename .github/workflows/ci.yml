@@ -21,8 +21,14 @@ jobs:
       - name: Build
         run: cmake --build build -j
 
-      - name: Test
-        run: ctest --test-dir build --output-on-failure -V
+      - name: Test (run 1/3)
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
+      - name: Test (run 2/3)
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
+      - name: Test (run 3/3)
+        run: ctest --test-dir build --output-on-failure --no-tests=error
 
   coverage:
     runs-on: ubuntu-latest
@@ -33,8 +39,11 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
       - name: Build (coverage)
         run: cmake --build build -j
-      - name: Run tests (coverage)
-        run: ctest --test-dir build --output-on-failure
+      - name: Run tests (coverage, run 1/2)
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
+      - name: Run tests (coverage, run 2/2)
+        run: ctest --test-dir build --output-on-failure --no-tests=error
       - name: Install gcovr
         run: |
           python3 -m pip install --upgrade pip
@@ -50,3 +59,21 @@ jobs:
           path: |
             build/coverage.xml
             build/coverage.html
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    env:
+      ASAN_OPTIONS: detect_leaks=0
+      UBSAN_OPTIONS: halt_on_error=1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure (asan)
+        run: cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_ASAN=ON
+      - name: Build (asan)
+        run: cmake --build build-asan -j
+      - name: Test (asan, run 1/2)
+        run: ctest --test-dir build-asan --output-on-failure --no-tests=error
+
+      - name: Test (asan, run 2/2)
+        run: ctest --test-dir build-asan --output-on-failure --no-tests=error
