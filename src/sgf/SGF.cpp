@@ -46,6 +46,36 @@ char encode_coord(int value) {
     return static_cast<char>('a' + value);
 }
 
+bool try_parse_size_t(const std::string& s, std::size_t& out) {
+    std::string t = s;
+    t.erase(std::remove_if(t.begin(), t.end(), [](unsigned char c){ return std::isspace(c) != 0; }), t.end());
+    if (t.empty()) return false;
+    try {
+        std::size_t idx = 0;
+        unsigned long v = std::stoul(t, &idx);
+        if (idx != t.size()) return false;
+        out = static_cast<std::size_t>(v);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool try_parse_double(const std::string& s, double& out) {
+    std::string t = s;
+    t.erase(std::remove_if(t.begin(), t.end(), [](unsigned char c){ return std::isspace(c) != 0; }), t.end());
+    if (t.empty()) return false;
+    try {
+        std::size_t idx = 0;
+        double v = std::stod(t, &idx);
+        if (idx != t.size()) return false;
+        out = v;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 } // namespace
 
 namespace sgf {
@@ -61,12 +91,14 @@ GameTree load(std::istream& input) {
     stripped.erase(std::remove_if(stripped.begin(), stripped.end(), [](unsigned char c) { return std::isspace(c) != 0; }), stripped.end());
 
     std::string sz_value = extract_property(stripped, "SZ");
-    if (!sz_value.empty()) {
-        game.board_size = static_cast<std::size_t>(std::stoul(sz_value));
+    std::size_t parsed_size = 0;
+    if (!sz_value.empty() && try_parse_size_t(sz_value, parsed_size)) {
+        game.board_size = parsed_size;
     }
     std::string km_value = extract_property(stripped, "KM");
-    if (!km_value.empty()) {
-        game.komi = std::stod(km_value);
+    double parsed_komi = 0.0;
+    if (!km_value.empty() && try_parse_double(km_value, parsed_komi)) {
+        game.komi = parsed_komi;
     }
 
     std::size_t pos = 0;
@@ -130,4 +162,3 @@ void save(const GameTree& game, std::ostream& output) {
 }
 
 } // namespace sgf
-
