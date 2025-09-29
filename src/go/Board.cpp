@@ -49,6 +49,7 @@ bool Board::play_move(Player player, Move move) {
         set_ko(std::nullopt);
         to_play_ = other(player);
         history_stack_.push_back(position_hash_);
+        position_history_.insert(position_hash_);
         return true;
     }
 
@@ -227,7 +228,13 @@ void Board::remove_stone(int vertex) {
 }
 
 void Board::set_ko(std::optional<int> vertex) {
+    if (ko_vertex_) {
+        position_hash_ ^= zobrist_.ko_hash(static_cast<std::size_t>(*ko_vertex_));
+    }
     ko_vertex_ = vertex;
+    if (ko_vertex_) {
+        position_hash_ ^= zobrist_.ko_hash(static_cast<std::size_t>(*ko_vertex_));
+    }
 }
 
 ScoreResult Board::tromp_taylor_score() const {
@@ -287,5 +294,12 @@ Player to_player(PointState state) {
     return state == PointState::Black ? Player::Black : Player::White;
 }
 
-} // namespace go
+std::uint64_t Board::state_key() const noexcept {
+    std::uint64_t key = position_hash_;
+    if (to_play_ == Player::White) {
+        key ^= zobrist_.side_to_move_hash();
+    }
+    return key;
+}
 
+} // namespace go

@@ -5,7 +5,6 @@
 #include <cmath>
 #include <iomanip>
 #include <optional>
-#include <random>
 #include <sstream>
 
 namespace {
@@ -24,18 +23,22 @@ std::string to_lower_copy(std::string text) {
     return text;
 }
 
-std::mt19937& rng() {
-    static std::mt19937 gen{5489u};
-    return gen;
-}
-
 } // namespace
 
 namespace gtp {
 
-Server::Server(go::Board board, std::istream& in, std::ostream& out)
-    : board_(std::move(board)), in_(in), out_(out) {
+Server::Server(go::Board board,
+               std::istream& in,
+               std::ostream& out,
+               search::SearchConfig search_config,
+               std::shared_ptr<search::Evaluator> evaluator)
+    : board_(std::move(board)),
+      in_(in),
+      out_(out),
+      search_agent_(std::make_unique<search::SearchAgent>(search_config, std::move(evaluator))),
+      search_config_(search_config) {
     register_handlers();
+    reset_search();
 }
 
 void Server::run() {
@@ -111,12 +114,14 @@ Server::HandlerResult Server::handle_boardsize(const std::string& args) {
     go::Rules rules = board_.rules();
     rules.board_size = static_cast<std::size_t>(size);
     board_ = go::Board(rules);
+    reset_search();
     return {true, ""};
 }
 
 Server::HandlerResult Server::handle_clear_board(const std::string&) {
     board_.clear();
     board_.set_to_play(go::Player::Black);
+    reset_search();
     return {true, ""};
 }
 
@@ -128,6 +133,7 @@ Server::HandlerResult Server::handle_komi(const std::string& args) {
     go::Rules rules = board_.rules();
     rules.komi = komi;
     board_ = go::Board(rules);
+    reset_search();
     return {true, ""};
 }
 
@@ -162,6 +168,8 @@ Server::HandlerResult Server::handle_play(const std::string& args) {
     if (!board_.play_move(color, move)) {
         return {false, "illegal move"};
     }
+    ++move_number_;
+    search_agent_->notify_move(move, board_, board_.to_play());
     return {true, ""};
 }
 
@@ -180,25 +188,13 @@ Server::HandlerResult Server::handle_genmove(const std::string& args) {
 
     board_.set_to_play(color);
 
-    std::vector<int> legal;
-    const std::size_t total = board_.board_size() * board_.board_size();
-    legal.reserve(total);
-    for (std::size_t v = 0; v < total; ++v) {
-        go::Move move(static_cast<int>(v));
-        if (board_.is_legal(color, move)) {
-            legal.push_back(static_cast<int>(v));
-        }
-    }
-
-    go::Move move = go::Move::Pass();
-    if (!legal.empty()) {
-        std::uniform_int_distribution<std::size_t> dist(0, legal.size() - 1);
-        move = go::Move(legal[dist(rng())]);
-    }
-
+    go::Move move = search_agent_->select_move(board_, color, move_number_);
     if (!board_.play_move(color, move)) {
         return {false, "genmove failed"};
     }
+
+    ++move_number_;
+    search_agent_->notify_move(move, board_, board_.to_play());
 
     if (move.is_pass()) {
         return {true, "pass"};
@@ -356,5 +352,13 @@ void Server::register_handlers() {
     handlers_["quit"] = [this](const std::string& args) { return handle_quit(args); };
 }
 
-} // namespace gtp
+void Server::reset_search() {
+    move_number_ = 0;
+    if (search_agent_) {
+        search_agent_->reset();
+    } else {
+        search_agent_ = std::make_unique<search::SearchAgent>(search_config_, nullptr);
+    }
+}
 
+} // namespace gtp

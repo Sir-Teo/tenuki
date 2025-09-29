@@ -16,6 +16,7 @@ add_library(tenuki
     src/go/Rules.cpp
     src/go/Zobrist.cpp
     src/gtp/GTP.cpp
+    src/search/Search.cpp
     src/sgf/SGF.cpp
 )
 
@@ -26,10 +27,11 @@ target_link_libraries(tenuki_cli PRIVATE tenuki)
 
 add_executable(tenuki_tests
     tests/BoardTests.cpp
+    tests/SearchTests.cpp
+    tests/TestMain.cpp
 )
 
 target_link_libraries(tenuki_tests PRIVATE tenuki)
 
 enable_testing()
 add_test(NAME board_tests COMMAND tenuki_tests)
-

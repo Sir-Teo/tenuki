@@ -59,10 +59,8 @@ void test_tromp_taylor_score() {
     assert(score.white_points == 2);
 }
 
-int main() {
+void run_board_tests() {
     test_simple_capture();
     test_simple_ko();
     test_tromp_taylor_score();
-    return 0;
 }
-

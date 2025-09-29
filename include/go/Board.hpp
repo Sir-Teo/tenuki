@@ -56,6 +56,7 @@ public:
     std::optional<int> ko_vertex() const noexcept { return ko_vertex_; }
 
     std::uint64_t position_hash() const noexcept { return position_hash_; }
+    std::uint64_t state_key() const noexcept;
     const std::unordered_set<std::uint64_t>& seen_positions() const noexcept { return position_history_; }
 
     ScoreResult tromp_taylor_score() const;
@@ -91,4 +92,3 @@ PointState to_point(Player p);
 Player to_player(PointState state);
 
 } // namespace go
-
