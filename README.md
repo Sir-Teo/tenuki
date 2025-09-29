@@ -45,6 +45,17 @@ printf "boardsize 9\ngenmove B\nshowboard\nquit\n" | ./build/tenuki_cli
 ./build/board_tests
 ```
 
+## Benchmarking
+
+Build the optional benchmark tool and compare search throughput across thread counts:
+
+```
+cmake --build build -j --target search_benchmark
+./build/search_benchmark --board-size 9 --playouts 256 --iterations 16 --threads 1,2,4
+```
+
+The tool prints a CSV header followed by per-thread measurements (wall-clock seconds, total playouts, and derived playouts-per-second). Use a larger board size and visit count for more realistic production loads.
+
 ## Next Steps
 
 - Extend GTP `genmove` with proper MCTS (Milestone M1)

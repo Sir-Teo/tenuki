@@ -44,6 +44,12 @@ if(TENUKI_ENABLE_WARNINGS)
   target_compile_options(tenuki_cli PRIVATE ${_TENUKI_WARNINGS})
 endif()
 
+add_executable(search_benchmark tools/SearchBenchmark.cpp)
+target_link_libraries(search_benchmark PRIVATE tenuki)
+if(TENUKI_ENABLE_WARNINGS)
+  target_compile_options(search_benchmark PRIVATE ${_TENUKI_WARNINGS})
+endif()
+
 add_executable(tenuki_tests
     tests/BoardTests.cpp
     tests/SearchTests.cpp
