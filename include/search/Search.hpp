@@ -12,6 +12,7 @@ namespace search {
 struct SearchConfig {
     int max_playouts = 256;
     float cpuct = 1.6f;
+    float fpu_reduction = 0.5f;
     float dirichlet_alpha = 0.03f;
     float dirichlet_epsilon = 0.25f;
     float temperature = 1.0f;

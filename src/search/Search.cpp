@@ -54,10 +54,11 @@ void SearchAgent::ensure_root(const go::Board& board, go::Player to_play) {
 
     if (!root_->expanded) {
         expand(*root_, board);
-        if (config_.dirichlet_epsilon > 0.0f && !root_->noise_applied) {
-            apply_dirichlet_noise(*root_, rng_);
-            root_->noise_applied = true;
-        }
+    }
+
+    if (config_.dirichlet_epsilon > 0.0f && !root_->noise_applied) {
+        apply_dirichlet_noise(*root_, rng_);
+        root_->noise_applied = true;
     }
 }
 
@@ -199,16 +200,24 @@ float SearchAgent::simulate(go::Board board_copy, Node& node, std::mt19937& rng)
 
 int SearchAgent::select_child(const Node& node, std::mt19937& rng) const {
     const float sqrt_total = std::sqrt(static_cast<float>(node.visit_count) + 1.0f);
+    const float parent_q = node.visit_count > 0 ? node.value_sum / static_cast<float>(node.visit_count) : 0.0f;
     float best_score = -std::numeric_limits<float>::infinity();
     int best_index = 0;
 
     for (int idx = 0; idx < static_cast<int>(node.children.size()); ++idx) {
         const SearchAgent::Child& child = node.children[idx];
-        const float q = child.visit_count > 0 ? child.value_sum / static_cast<float>(child.visit_count) : 0.0f;
+        float q = 0.0f;
+        if (child.visit_count > 0) {
+            q = child.value_sum / static_cast<float>(child.visit_count);
+        } else {
+            q = parent_q - config_.fpu_reduction;
+        }
+        q = std::clamp(q, -1.0f, 1.0f);
         const float u = config_.cpuct * child.prior * sqrt_total / (1.0f + static_cast<float>(child.visit_count));
         const float score = q + u;
-        if (score > best_score) {
-            best_score = score;
+        const float noisy_score = score + 1e-6f * std::generate_canonical<float, 10>(rng);
+        if (noisy_score > best_score) {
+            best_score = noisy_score;
             best_index = idx;
         }
     }
