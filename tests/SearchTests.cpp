@@ -169,7 +169,7 @@ void test_notify_move_resets_tree_when_child_unexpanded() {
     auto evaluator = std::make_shared<CountingEvaluator>();
 
     search::SearchConfig config;
-    config.max_playouts = 4;
+    config.max_playouts = 1;
     config.enable_playout_cap_randomization = false;
     config.dirichlet_epsilon = 0.0f;
     config.temperature = 0.0f;
