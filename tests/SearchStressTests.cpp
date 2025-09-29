@@ -1,11 +1,10 @@
+#include "TestUtils.hpp"
 #include "go/Board.hpp"
 #include "search/Search.hpp"
 
-#include <cassert>
-
 void test_search_short_random_game_stability() {
     go::Rules rules;
-    rules.board_size = 5; // keep small for speed
+    rules.board_size = 5;
     go::Board board(rules);
 
     search::SearchConfig cfg;
@@ -16,10 +15,9 @@ void test_search_short_random_game_stability() {
     search::SearchAgent agent(cfg, eval);
 
     go::Player to_move = go::Player::Black;
-    for (int i = 0; i < 30; ++i) { // short game
+    for (int i = 0; i < 30; ++i) {
         go::Move m = agent.select_move(board, to_move, i);
-        bool ok = board.play_move(to_move, m);
-        assert(ok);
+        TENUKI_EXPECT(board.play_move(to_move, m));
         agent.notify_move(m, board, board.to_play());
         to_move = board.to_play();
     }

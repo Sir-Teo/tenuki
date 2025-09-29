@@ -3,11 +3,9 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 
 
 def read_reply(proc):
-    # GTP replies end with a blank line
     lines = []
     while True:
         line = proc.stdout.readline()
@@ -28,10 +26,21 @@ def send(proc, cmd):
 
 def expect_ok(reply):
     assert reply.startswith('='), f"Expected OK reply, got: {reply!r}"
+    first_line = reply.split('\n', 1)[0]
+    return first_line[1:].strip()
 
 
-def expect_fail(reply):
+def expect_fail(reply, expected_substring=None):
     assert reply.startswith('?'), f"Expected failure reply, got: {reply!r}"
+    first_line = reply.split('\n', 1)[0]
+    payload = first_line[1:].strip()
+    if expected_substring is not None:
+        assert expected_substring in payload, f"Expected '{expected_substring}' in '{payload}'"
+    return payload
+
+
+def expect_vertex(move):
+    assert move == 'pass' or re.match(r'^[A-HJ](?:[1-9]|1[0-9])$', move), f"Bad move: {move}"
 
 
 def main():
@@ -51,55 +60,51 @@ def main():
     )
 
     try:
-        # Basic identity
-        reply = send(proc, 'protocol_version')
-        expect_ok(reply)
-        assert '2' in reply
+        payload = expect_ok(send(proc, 'protocol_version'))
+        assert payload == '2'
 
-        reply = send(proc, 'name')
-        expect_ok(reply)
-        assert 'Tenuki' in reply
+        payload = expect_ok(send(proc, 'name'))
+        assert payload == 'Tenuki'
 
-        reply = send(proc, 'version')
-        expect_ok(reply)
+        expect_ok(send(proc, 'version'))
 
-        # Setup a 9x9 game and play a move
         expect_ok(send(proc, 'boardsize 9'))
         expect_ok(send(proc, 'clear_board'))
         expect_ok(send(proc, 'komi 7.5'))
 
-        # genmove should return a vertex like "A1" or "pass"
-        reply = send(proc, 'genmove B')
-        expect_ok(reply)
-        move = reply.split('\n')[0].split(' ', 1)[-1].strip()
-        assert move == 'pass' or re.match(r'^[A-HJ](?:[1-9])$', move), f"Bad move: {move}"
+        move = expect_ok(send(proc, 'genmove B'))
+        expect_vertex(move)
 
-        # showboard returns a board with coordinates
-        reply = send(proc, 'showboard')
-        expect_ok(reply)
-        assert 'A B C D E F G H J' in reply
+        payload = expect_ok(send(proc, 'showboard'))
+        assert 'A B C D E F G H J' in payload
 
-        # Play explicit moves and pass
         expect_ok(send(proc, 'play B D4'))
         expect_ok(send(proc, 'play W pass'))
-
-        # Verify J9 is valid (skip I column)
         expect_ok(send(proc, 'play B J9'))
 
-        # final_score returns a score string
-        reply = send(proc, 'final_score')
-        expect_ok(reply)
-        score = reply.split('\n')[0].split(' ', 1)[-1].strip()
-        assert score == '0' or re.match(r'^[BW]\+[0-9]+(\.[0-9])?$', score), f"Bad score: {score}"
+        score_payload = expect_ok(send(proc, 'final_score'))
+        assert score_payload == '0' or re.match(r'^[BW]\+[0-9]+(\.[0-9])?$', score_payload)
 
-        # Unknown command should fail
-        expect_fail(send(proc, 'unknown_command_xyz'))
+        expect_fail(send(proc, 'unknown_command_xyz'), 'unknown_command')
+        expect_fail(send(proc, 'boardsize cats'), 'invalid boardsize')
+        expect_fail(send(proc, 'komi nope'), 'invalid komi')
+        expect_fail(send(proc, 'play X D4'), 'invalid color')
+        expect_fail(send(proc, 'play B I9'), 'invalid vertex')
+        expect_fail(send(proc, 'genmove Q'), 'invalid color')
 
-        # Invalid inputs should fail gracefully
-        expect_fail(send(proc, 'boardsize cats'))
-        expect_fail(send(proc, 'komi nope'))
-        expect_fail(send(proc, 'play X D4'))
-        expect_fail(send(proc, 'play B I9'))  # I column is invalid
+        # Deterministic scoring regression: 5x5, komi 0, single black stone.
+        expect_ok(send(proc, 'boardsize 5'))
+        expect_ok(send(proc, 'komi 0'))
+        expect_ok(send(proc, 'clear_board'))
+        expect_ok(send(proc, 'play B A1'))
+        expect_ok(send(proc, 'play W pass'))
+        expect_ok(send(proc, 'play B pass'))
+        final_score = expect_ok(send(proc, 'final_score'))
+        assert final_score == 'B+25.0', f"Unexpected deterministic score: {final_score}"
+
+        # Vertex validation regression: out-of-range row number.
+        expect_fail(send(proc, 'play B A0'), 'invalid vertex')
+        expect_fail(send(proc, 'play B Z1'), 'invalid vertex')
 
         expect_ok(send(proc, 'quit'))
     finally:
@@ -115,3 +120,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

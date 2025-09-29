@@ -1,8 +1,8 @@
+#include "TestUtils.hpp"
 #include "go/Board.hpp"
 #include "search/Search.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <memory>
 #include <numeric>
@@ -106,7 +106,7 @@ go::Board apply_history(const Scenario& scenario) {
     for (const ScenarioMove& m : scenario.history) {
         go::Move move = (m.vertex < 0) ? go::Move::Pass() : go::Move(m.vertex);
         const bool ok = board.play_move(m.player, move);
-        assert(ok);
+        TENUKI_EXPECT(ok);
     }
     board.set_to_play(scenario.to_play);
     return board;
@@ -178,7 +178,7 @@ std::vector<Scenario> build_scenarios() {
 void test_model_quality_harness_scores_simple_positions() {
     const auto scenarios = build_scenarios();
     const float accuracy = evaluate_model_on_scenarios(scenarios);
-    assert(accuracy >= 1.0f - kEpsilon);
+    TENUKI_EXPECT(accuracy >= 1.0f - kEpsilon);
 }
 
 void run_model_quality_tests() {

@@ -1,7 +1,7 @@
+#include "TestUtils.hpp"
 #include "sgf/SGF.hpp"
 #include "go/Board.hpp"
 
-#include <cassert>
 #include <sstream>
 #include <string>
 
@@ -19,19 +19,20 @@ static void test_sgf_roundtrip_simple() {
     std::istringstream iss(oss.str());
     sgf::GameTree loaded = sgf::load(iss);
 
-    assert(loaded.board_size == 9);
-    assert(loaded.komi == 6.5);
-    assert(loaded.moves.size() == 3);
-    assert(loaded.moves[0].player == go::Player::Black);
-    assert(!loaded.moves[0].move.is_pass());
+    TENUKI_EXPECT_EQ(loaded.board_size, 9u);
+    TENUKI_EXPECT_NEAR(loaded.komi, 6.5, 1e-6);
+    TENUKI_EXPECT_EQ(loaded.moves.size(), static_cast<std::size_t>(3));
+    TENUKI_EXPECT_EQ(loaded.moves[0].player, go::Player::Black);
+    TENUKI_EXPECT_FALSE(loaded.moves[0].move.is_pass());
 }
 
 static void test_sgf_load_minimal() {
     const std::string data = "(;SZ[5]KM[0.5];B[aa];W[bb];B[])";
     std::istringstream iss(data);
     sgf::GameTree loaded = sgf::load(iss);
-    assert(loaded.board_size == 5);
-    assert(loaded.moves.size() == 3);
+    TENUKI_EXPECT_EQ(loaded.board_size, 5u);
+    TENUKI_EXPECT_EQ(loaded.moves.size(), static_cast<std::size_t>(3));
+    TENUKI_EXPECT(loaded.moves.back().move.is_pass());
 }
 
 void run_sgf_tests() {

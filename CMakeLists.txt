@@ -55,6 +55,7 @@ add_executable(tenuki_tests
 )
 
 target_link_libraries(tenuki_tests PRIVATE tenuki)
+target_include_directories(tenuki_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 if(TENUKI_ENABLE_WARNINGS)
   target_compile_options(tenuki_tests PRIVATE ${_TENUKI_WARNINGS})
 endif()

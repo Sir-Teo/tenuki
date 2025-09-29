@@ -27,6 +27,8 @@ def send(proc, cmd):
 
 def expect_ok(reply):
     assert reply.startswith('='), f"Expected OK reply, got: {reply!r}"
+    first_line = reply.split("\n", 1)[0]
+    return first_line[1:].strip()
 
 
 def main():
@@ -61,8 +63,7 @@ def main():
             color = 'B'
             for i in range(30):
                 reply = send(proc, f'genmove {color}')
-                expect_ok(reply)
-                move = reply.split('\n')[0].split(' ', 1)[-1].strip()
+                move = expect_ok(reply)
                 assert move == 'pass' or re.match(r'^[A-HJ](?:[1-9])$', move), f"Bad move: {move}"
                 color = 'W' if color == 'B' else 'B'
 
