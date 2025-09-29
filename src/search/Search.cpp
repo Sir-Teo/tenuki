@@ -175,9 +175,10 @@ float SearchAgent::simulate(go::Board board_copy, Node& node, std::mt19937& rng)
             return terminal_value;
         }
 
-        int child_index = select_child(*current, rng);
+        const int child_index = select_child(*current, rng);
+        const std::size_t child_pos = static_cast<std::size_t>(child_index);
         child_indices.push_back(child_index);
-        SearchAgent::Child& child = current->children[child_index];
+        SearchAgent::Child& child = current->children[child_pos];
         go::Move move = child.move == -1 ? go::Move::Pass() : go::Move(child.move);
         const bool legal = board_copy.play_move(current->to_play, move);
         if (!legal) {
@@ -204,7 +205,7 @@ int SearchAgent::select_child(const Node& node, std::mt19937& rng) const {
     float best_score = -std::numeric_limits<float>::infinity();
     int best_index = 0;
 
-    for (int idx = 0; idx < static_cast<int>(node.children.size()); ++idx) {
+    for (std::size_t idx = 0; idx < node.children.size(); ++idx) {
         const SearchAgent::Child& child = node.children[idx];
         float q = 0.0f;
         if (child.visit_count > 0) {
@@ -218,7 +219,7 @@ int SearchAgent::select_child(const Node& node, std::mt19937& rng) const {
         const float noisy_score = score + 1e-6f * std::generate_canonical<float, 10>(rng);
         if (noisy_score > best_score) {
             best_score = noisy_score;
-            best_index = idx;
+            best_index = static_cast<int>(idx);
         }
     }
     return best_index;
@@ -290,13 +291,13 @@ float SearchAgent::expand(Node& node, const go::Board& board) {
 
 void SearchAgent::backpropagate(std::vector<Node*> path, std::vector<int> child_indices, float value) {
     float current_value = value;
-    for (int i = static_cast<int>(path.size()) - 1; i >= 0; --i) {
-        Node* node = path[i];
+    for (std::size_t idx = path.size(); idx-- > 0;) {
+        Node* node = path[idx];
         node->visit_count += 1;
         node->value_sum += current_value;
-        if (i > 0) {
-            Node* parent = path[i - 1];
-            int child_index = child_indices[i - 1];
+        if (idx > 0) {
+            Node* parent = path[idx - 1];
+            const std::size_t child_index = static_cast<std::size_t>(child_indices[idx - 1]);
             SearchAgent::Child& child = parent->children[child_index];
             child.visit_count += 1;
             child.value_sum += current_value;
@@ -318,14 +319,14 @@ go::Move SearchAgent::select_move_from_root(int move_number, std::mt19937& rng) 
     if (temperature <= kEpsilon) {
         int best_index = 0;
         int best_visits = -1;
-        for (int idx = 0; idx < static_cast<int>(root_->children.size()); ++idx) {
-        const SearchAgent::Child& child = root_->children[idx];
+        for (std::size_t idx = 0; idx < root_->children.size(); ++idx) {
+            const SearchAgent::Child& child = root_->children[idx];
             if (child.visit_count > best_visits) {
                 best_visits = child.visit_count;
-                best_index = idx;
+                best_index = static_cast<int>(idx);
             }
         }
-        const SearchAgent::Child& best_child = root_->children[best_index];
+        const SearchAgent::Child& best_child = root_->children[static_cast<std::size_t>(best_index)];
         return best_child.move == -1 ? go::Move::Pass() : go::Move(best_child.move);
     }
 
@@ -350,7 +351,7 @@ go::Move SearchAgent::select_move_from_root(int move_number, std::mt19937& rng) 
 
     std::discrete_distribution<int> dist(weights.begin(), weights.end());
     const int idx = dist(rng);
-    const SearchAgent::Child& choice = root_->children[idx];
+    const SearchAgent::Child& choice = root_->children[static_cast<std::size_t>(idx)];
     return choice.move == -1 ? go::Move::Pass() : go::Move(choice.move);
 }
 

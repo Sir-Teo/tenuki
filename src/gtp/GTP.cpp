@@ -274,7 +274,7 @@ Server::HandlerResult Server::handle_showboard(const std::string&) {
     for (std::size_t y = 0; y < size; ++y) {
         oss << std::setw(2) << (size - y) << ' ';
         for (std::size_t x = 0; x < size; ++x) {
-            int vertex = static_cast<int>(y * size + x);
+            const std::size_t vertex = y * size + x;
             auto state = board_.point_state(vertex);
             char symbol = '.';
             if (state == go::PointState::Black) {

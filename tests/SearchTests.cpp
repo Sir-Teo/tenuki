@@ -18,7 +18,7 @@ public:
         search::EvaluationResult result;
         result.policy.assign(area + 1, 1.0f);
         if (preferred_vertex_ >= 0 && preferred_vertex_ < static_cast<int>(area)) {
-            result.policy[preferred_vertex_] = 10.0f;
+            result.policy[static_cast<std::size_t>(preferred_vertex_)] = 10.0f;
         }
         result.value = value_;
         return result;

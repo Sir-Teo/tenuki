@@ -57,7 +57,9 @@ bool Board::play_move(Player player, Move move) {
         return false;
     }
 
-    if (board_[move.vertex] != PointState::Empty) {
+    const std::size_t move_index = static_cast<std::size_t>(move.vertex);
+
+    if (board_[move_index] != PointState::Empty) {
         return false;
     }
 
@@ -75,7 +77,8 @@ bool Board::play_move(Player player, Move move) {
     captured.reserve(4 * rules_.board_size);
 
     for (int neighbor : neighbors(move.vertex)) {
-        if (board_[neighbor] != opponent) {
+        const std::size_t neighbor_index = static_cast<std::size_t>(neighbor);
+        if (board_[neighbor_index] != opponent) {
             continue;
         }
         std::vector<int> group;
@@ -142,13 +145,16 @@ bool Board::in_bounds(int x, int y) const noexcept {
 std::vector<int> Board::neighbors(int vertex) const {
     std::vector<int> result;
     result.reserve(4);
-    int x = vertex % static_cast<int>(rules_.board_size);
-    int y = vertex / static_cast<int>(rules_.board_size);
+    const int board_size = static_cast<int>(rules_.board_size);
+    const int x = vertex % board_size;
+    const int y = vertex / board_size;
     for (int dir = 0; dir < 4; ++dir) {
-        int nx = x + kDx[dir];
-        int ny = y + kDy[dir];
+        const std::size_t dir_index = static_cast<std::size_t>(dir);
+        const int nx = x + kDx[dir_index];
+        const int ny = y + kDy[dir_index];
         if (in_bounds(nx, ny)) {
-            result.push_back(index(nx, ny));
+            const std::size_t neighbor_index = index(static_cast<std::size_t>(nx), static_cast<std::size_t>(ny));
+            result.push_back(static_cast<int>(neighbor_index));
         }
     }
     return result;
@@ -157,20 +163,22 @@ std::vector<int> Board::neighbors(int vertex) const {
 int Board::count_liberties(int vertex, PointState color, std::vector<bool>& visited, std::vector<bool>& liberty_visited) const {
     std::queue<int> q;
     q.push(vertex);
-    visited[vertex] = true;
+    const std::size_t vertex_index = static_cast<std::size_t>(vertex);
+    visited[vertex_index] = true;
     int liberties = 0;
 
     while (!q.empty()) {
-        int v = q.front();
+        const int v = q.front();
         q.pop();
         for (int n : neighbors(v)) {
-            if (board_[n] == PointState::Empty) {
-                if (!liberty_visited[n]) {
-                    liberty_visited[n] = true;
+            const std::size_t neighbor_index = static_cast<std::size_t>(n);
+            if (board_[neighbor_index] == PointState::Empty) {
+                if (!liberty_visited[neighbor_index]) {
+                    liberty_visited[neighbor_index] = true;
                     ++liberties;
                 }
-            } else if (board_[n] == color && !visited[n]) {
-                visited[n] = true;
+            } else if (board_[neighbor_index] == color && !visited[neighbor_index]) {
+                visited[neighbor_index] = true;
                 q.push(n);
             }
         }
@@ -182,18 +190,19 @@ int Board::collect_group(int vertex, PointState color, std::vector<int>& out_ver
     std::queue<int> q;
     std::vector<bool> visited(board_len_, false);
     q.push(vertex);
-    visited[vertex] = true;
+    visited[static_cast<std::size_t>(vertex)] = true;
     int liberties = 0;
 
     while (!q.empty()) {
-        int v = q.front();
+        const int v = q.front();
         q.pop();
         out_vertices.push_back(v);
         for (int n : neighbors(v)) {
-            if (board_[n] == PointState::Empty) {
+            const std::size_t neighbor_index = static_cast<std::size_t>(n);
+            if (board_[neighbor_index] == PointState::Empty) {
                 ++liberties;
-            } else if (board_[n] == color && !visited[n]) {
-                visited[n] = true;
+            } else if (board_[neighbor_index] == color && !visited[neighbor_index]) {
+                visited[neighbor_index] = true;
                 q.push(n);
             }
         }
@@ -209,22 +218,24 @@ bool Board::violates_superko(std::uint64_t prospective_hash) const {
 }
 
 void Board::place_stone(int vertex, PointState color) {
-    board_[vertex] = color;
+    const std::size_t vertex_index = static_cast<std::size_t>(vertex);
+    board_[vertex_index] = color;
     if (color == PointState::Black) {
-        position_hash_ ^= zobrist_.black_stone_hash(vertex);
+        position_hash_ ^= zobrist_.black_stone_hash(vertex_index);
     } else if (color == PointState::White) {
-        position_hash_ ^= zobrist_.white_stone_hash(vertex);
+        position_hash_ ^= zobrist_.white_stone_hash(vertex_index);
     }
 }
 
 void Board::remove_stone(int vertex) {
-    PointState color = board_[vertex];
+    const std::size_t vertex_index = static_cast<std::size_t>(vertex);
+    PointState color = board_[vertex_index];
     if (color == PointState::Black) {
-        position_hash_ ^= zobrist_.black_stone_hash(vertex);
+        position_hash_ ^= zobrist_.black_stone_hash(vertex_index);
     } else if (color == PointState::White) {
-        position_hash_ ^= zobrist_.white_stone_hash(vertex);
+        position_hash_ ^= zobrist_.white_stone_hash(vertex_index);
     }
-    board_[vertex] = PointState::Empty;
+    board_[vertex_index] = PointState::Empty;
 }
 
 void Board::set_ko(std::optional<int> vertex) {
@@ -242,14 +253,15 @@ ScoreResult Board::tromp_taylor_score() const {
     std::vector<bool> visited(board_len_, false);
 
     for (int v = 0; v < static_cast<int>(board_len_); ++v) {
-        if (board_[v] == PointState::Black) {
+        const std::size_t vertex_index = static_cast<std::size_t>(v);
+        if (board_[vertex_index] == PointState::Black) {
             result.black_points += 1.0;
-        } else if (board_[v] == PointState::White) {
+        } else if (board_[vertex_index] == PointState::White) {
             result.white_points += 1.0;
-        } else if (!visited[v]) {
+        } else if (!visited[vertex_index]) {
             std::queue<int> q;
             q.push(v);
-            visited[v] = true;
+            visited[vertex_index] = true;
             bool borders_black = false;
             bool borders_white = false;
             int region_size = 0;
@@ -259,12 +271,13 @@ ScoreResult Board::tromp_taylor_score() const {
                 q.pop();
                 ++region_size;
                 for (int n : neighbors(cur)) {
-                    if (board_[n] == PointState::Empty && !visited[n]) {
-                        visited[n] = true;
+                    const std::size_t neighbor_index = static_cast<std::size_t>(n);
+                    if (board_[neighbor_index] == PointState::Empty && !visited[neighbor_index]) {
+                        visited[neighbor_index] = true;
                         q.push(n);
-                    } else if (board_[n] == PointState::Black) {
+                    } else if (board_[neighbor_index] == PointState::Black) {
                         borders_black = true;
-                    } else if (board_[n] == PointState::White) {
+                    } else if (board_[neighbor_index] == PointState::White) {
                         borders_white = true;
                     }
                 }
